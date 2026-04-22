@@ -1,28 +1,35 @@
 #!/bin/bash
-#SBATCH --chdir .
-#SBATCH --account digital_humans
-#SBATCH --time=48:00:00
-#SBATCH -o /home/%u/slurm_output__%x-%j.out
+#SBATCH --chdir=.
+#SBATCH --account=digital_human_jobs
+#SBATCH --time=00:10:00
+#SBATCH --output=/home/%u/slurm_output__%x-%j.out
 #SBATCH --mail-type=FAIL
-#SBATCH --mem-per-cpu=14G
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=2
-#SBATCH --gpus=1
+#SBATCH --gpus=5060ti:1
+#SBATCH --cpus-per-gpu=2
+#SBATCH --mem=24G
 
-set -e
-set -o xtrace
-echo PWD:$(pwd)
-echo STARTING AT $(date)
+set -euo pipefail
+set -x
 
-# Environment
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate dummy-env
-# ...
+echo "PWD: $(pwd)"
+echo "HOST: $(hostname)"
+echo "STARTING AT $(date)"
 
-# Run your experiment
-python -c "import torch; print('Cuda available?', torch.cuda.is_available())"
-python -c "import torch; torch.manual_seed(72); print(torch.randn((3,3)))"
-# python my_script.py
+# System modules are not automatically available in batch jobs.
+. /etc/profile.d/modules.sh
+module add cuda/13.0
+
+# Environment. This assumes you followed the README and created `digihum`.
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
+conda activate digihum
+
+python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available?', torch.cuda.is_available()); print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
+nvidia-smi
+
+DATA_DIR="${DIGIHUM_TUTORIAL_DATA:-/work/scratch/$USER/digihum-tutorial-data}"
+mkdir -p "$DATA_DIR"
+
+python train_mnist.py --epochs 1 --batch-size 256 --data-dir "$DATA_DIR"
 
 echo "Done."
-echo FINISHED at $(date)
+echo "FINISHED AT $(date)"

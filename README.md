@@ -1,290 +1,533 @@
 # The Student Cluster Guide
 
-[`Digital Humans 2024`](https://vlg.inf.ethz.ch/teaching/Digital-Humans-FS-24.html) | `Tutorial 2` | `29.2.2024`
+[`Digital Humans FS 26`](https://vlg.inf.ethz.ch/teaching/Digital-Humans-FS-26.html) | `Cluster Tutorial` | `23.4.2026`
 
-ETH Zurich's Department of Computer Science (D-INFK) offers a dedicated student cluster equipped with GPUs for teaching purposes. Access to this cluster is exclusively provided to students enrolled in specific courses and their teaching assistants. Detailed guidance for utilizing the cluster is available in the help section [here](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentCluster).
+ETH Zurich's Department of Computer Science (D-INFK) provides the student cluster for GPU jobs in this course. The official cluster documentation is maintained by ISG and should be treated as the source of truth:
 
-This tutorial aims to introduce a simple workflow for engaging with the cluster, covering aspects from logging in to debugging Python code in PyCharm, and orchestrating a series of experiments. It's important to note that while many workflows exist for cluster usage, this tutorial outlines one of the many approaches, specifically the one I commonly employ.
+- [Student Cluster overview](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentCluster)
+- [Running jobs](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterRunningJobs)
+- [CUDA and PyTorch](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterCuda)
+- [Copying data](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterCopyingData)
+- [Troubleshooting](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterTroubleshooting)
 
-**Note**: Our course does not utilize the Euler cluster, which was previously used. The Euler student share will remain active only until March 2024, thus we have transitioned to using the D-INFK student cluster. Nevertheless, the workflow for both clusters remains largely similar.
+This tutorial gives one practical workflow for the course: log in, keep work alive with `tmux`, set up Python, run GPU jobs with Slurm, store data in the right place, and develop code without depending too much on fragile remote IDE support.
 
-## Tutorial Outline
+## Tutorial outline
 
-1. **[Logging into the Cluster](#1-logging-into-the-cluster)**
-2. **[Useful Configuration Files](#2-useful-configuration-files)**
-3. **[Python Environment Setup](#3-python-environment-setup)**
-4. **[Accessing GPUs: Running a Job Using `srun`](#4-accessing-gpus-running-a-job-using-srun)**
-5. **[Accessing GPUs: Running a Batch of Jobs Using `sbatch`](#5-accessing-gpus-running-a-batch-of-jobs-using-sbatch)**
-6. **[Accessing GPUs: Monitoring Jobs](#6-accessing-gpus-monitoring-jobs)**
-7. **[Storage Options](#7-storage-options)**
-8. **[Useful Command Tools](#8-useful-command-tools)**
-9. **[Remote File Access](#9-remote-file-access)**
-10. **[Development Setup](#10-development-setup)**
+1. **[Logging into the cluster](#1-logging-into-the-cluster)**
+2. **[Tmux and useful configuration files](#2-tmux-and-useful-configuration-files)**
+3. **[Python environment setup](#3-python-environment-setup)**
+4. **[Accessing GPUs with `srun`](#4-accessing-gpus-with-srun)**
+5. **[Accessing GPUs with `sbatch`](#5-accessing-gpus-with-sbatch)**
+6. **[Monitoring and canceling jobs](#6-monitoring-and-canceling-jobs)**
+7. **[Storage options](#7-storage-options)**
+8. **[Useful command-line tools](#8-useful-command-line-tools)**
+9. **[Remote file access and port forwarding](#9-remote-file-access-and-port-forwarding)**
+10. **[Development workflow](#10-development-workflow)**
+11. **[AI coding agents](#11-ai-coding-agents)**
+12. **[Two-way sync using Mutagen](#12-two-way-sync-using-mutagen)**
 
-## 1. Logging into the Cluster
+Throughout the tutorial, replace `login_name` with your ETH username, i.e., the part before `@ethz.ch` in your ETH email address. For this course, the Slurm account names are `digital_human` for short interactive/Jupyter use and `digital_human_jobs` for longer Slurm jobs. If Slurm reports that an account is invalid, run `courses` after login and use the accounts printed there. ISG provisioned 100 hours of interactive/Jupyter time and 150 hours of Slurm job time per student.
 
-To log in for the first time, execute the following command in your favorite terminal emulator, replacing `login_name` with your ETH username (the one in your `login_name@ethz.ch` email):
+## 1. Logging into the cluster
 
-```bash
-ssh login_name@student-cluster.inf.ethz.ch
-# password: ... <-- enter your ETH email password
-# Last login: ...
-```
-
-This command connects you to a "login" node. These nodes, lacking GPUs, are intended for job scheduling and management rather than computation. **Avoid running intensive processes on login nodes** to prevent potential access restrictions.
-
-For ease of access and enhanced security, we recommend setting up SSH Keys. Linux users can find setup instructions [here](https://www.digitalocean.com/community/tutorials/how-to-set-up-ssh-keys-on-ubuntu-20-04). Successfully setting up the keys will eliminate the need for password entry during subsequent logins.
+Log in with SSH:
 
 ```bash
 ssh login_name@student-cluster.inf.ethz.ch
-# Last login: ...
 ```
 
-Access from outside the ETH network requires a VPN connection. Refer to the VPN setup instructions [here](https://www.isg.inf.ethz.ch/Main/ServicesNetworkVPN). On Linux, connecting is as simple as:
-
-1. `sudo openconnect sslvpn.ethz.ch --user login_name@student-net.ethz.ch`
-2. Select `student-net`.
-3. Enter your ETH Wi-Fi password.
-4. Enter your 6-digit multifactor authentication key, setup instructions found [here](https://ethz.ch/staffnet/en/it-services/catalogue/identity-access/multifactor-authentication.html).
-
-## 2. Useful Configuration Files
-
-Consider updating your `~/.bashrc` file for your convenience and needs. For example, you can adapt the [`.bashrc`](./.bashrc) file we provide. If using tmux, consider using the provided configuration file [`.tmux.conf`](./.tmux.conf) that allows you to use the mouse and simplifies the shortcuts.
-
-## 3. Python Environment Setup
-
-You may use either conda or venv for setting up your Python environment. To install conda, follow these steps:
+`student-cluster.inf.ethz.ch` points to one of the login nodes. You can also connect to a specific login node:
 
 ```bash
-# 1. Download and install conda
-cd ~/
+ssh login_name@student-cluster1.inf.ethz.ch
+ssh login_name@student-cluster2.inf.ethz.ch
+```
+
+Do not run computationally intensive tasks on login nodes. Use login nodes to edit files, manage environments, submit jobs, monitor jobs, and run lightweight commands. Run training, inference, large preprocessing, and notebooks through Slurm/Jupyter instead.
+
+Access from outside ETH usually requires VPN. Follow the [ETH/ISG VPN instructions](https://www.isg.inf.ethz.ch/Main/ServicesNetworkVPN) to set it up before connecting from outside the ETH network.
+
+### 1.1 SSH keys
+
+SSH keys avoid typing your ETH password on every login:
+
+```bash
+# On your laptop
+ssh-keygen -t ed25519 -C "laptop-to-student-cluster"
+ssh-copy-id login_name@student-cluster.inf.ethz.ch
+```
+
+If `ssh-copy-id` is not available on your laptop, copy the public key manually:
+
+```bash
+cat ~/.ssh/id_ed25519.pub
+```
+
+Then append it to `~/.ssh/authorized_keys` on the cluster.
+
+### 1.2 Use a fixed login node for persistent tmux
+
+The generic SSH address `student-cluster.inf.ethz.ch` may send different connections to different login nodes. `tmux` sessions live on the login node where they were started. If you start `tmux` on `student-cluster1` but later connect to `student-cluster2`, you will not see that session.
+
+For persistent work, choose one fixed login node and always reconnect to it:
+
+```bash
+ssh -t login_name@student-cluster1.inf.ethz.ch 'tmux new -A -s digihum'
+```
+
+This command creates or attaches to a tmux session named `digihum`. If your laptop disconnects, reconnect with the same command and the tmux session should still be there unless the login node rebooted.
+
+## 2. Tmux and useful configuration files
+
+`tmux` keeps shells alive after your SSH connection drops. It is one of the most important tools for cluster work.
+
+Basic tmux commands:
+
+```bash
+tmux new -s digihum       # create session named digihum
+tmux attach -t digihum    # attach existing session
+tmux detach               # leave session running in background
+tmux ls                   # list sessions
+```
+
+If you copy the provided [`.tmux.conf`](./.tmux.conf) to `~/.tmux.conf`, the prefix is `Ctrl-a` instead of the default `Ctrl-b`.
+
+Useful shortcuts with the provided config:
+
+```txt
+Ctrl-a |        split pane horizontally
+Ctrl-a -        split pane vertically
+Alt-arrow       move between panes
+Ctrl-a z        zoom/unzoom the current pane (i.e., full-screen)
+Ctrl-a c        create a new tmux window (like a terminal tab)
+Ctrl-a n        go to the next tmux window
+Ctrl-a p        go to the previous tmux window
+Ctrl-a d        detach from session
+Ctrl-a P        save pane history to a file
+```
+
+The provided config also enables mouse support, so you can click panes, resize panes, and switch tmux windows with the mouse if your terminal supports it.
+
+The repository also provides an example [`.bashrc`](./.bashrc). The most useful parts are persistent shell history and a colored prompt. Do not replace the cluster's default `~/.bashrc` blindly, because site-specific defaults can change. A safer setup is to keep this tutorial config as a separate file and source it from your existing `~/.bashrc`:
+
+```bash
+cp ~/.bashrc ~/.bashrc.backup.$(date +%Y%m%d_%H%M%S)
+cp ~/.tmux.conf ~/.tmux.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+
+cp /path/to/this/repo/.bashrc ~/.bashrc.digihum
+cp /path/to/this/repo/.tmux.conf ~/.tmux.conf
+
+cat >> ~/.bashrc <<'EOF'
+
+# Digital Humans tutorial shell helpers
+if [ -f ~/.bashrc.digihum ]; then
+    . ~/.bashrc.digihum
+fi
+EOF
+```
+
+If you only want part of the setup, open the file and copy the pieces that are useful for your workflow.
+
+## 3. Python environment setup
+
+Use either `conda` or Python `venv`. `conda` is convenient for course projects because it can also install non-Python tools such as `nodejs`, `ncdu`, or compilers.
+
+### 3.1 Install Miniconda
+
+```bash
+cd ~
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash Miniconda3-latest-Linux-x86_64.sh
-# - Accept the license agreement
-# - Use your home directory as the installation location
-# - Allow the installer to update your shell profile for conda initialization
+```
 
-# 2. Reactivate your shell for the changes to take effect
+Accept the license, install into your home directory, and allow the installer to initialize your shell. Then log out and back in:
+
+```bash
 exit
-ssh login_name@student-cluster.inf.ethz.ch
+ssh -t login_name@student-cluster1.inf.ethz.ch 'tmux new -A -s digihum'
+```
 
-# 3. Create and activate a new conda environment
-conda create -n dummy-env python=3.9 -y
-conda activate dummy-env
+If Conda asks you to accept the Anaconda Terms of Service, run the commands it prints, for example:
 
-# 4. Install PyTorch (adjust version numbers as needed per https://pytorch.org/get-started/previous-versions/)
-conda install pytorch==1.12.1 torchvision==0.13.1 torchaudio==0.12.1 cudatoolkit=11.6 -c pytorch -c conda-forge
+```bash
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+```
 
-# Note: GPUs are not available on login nodes
-python -c "import torch; print('Cuda available?', torch.cuda.is_available())"
-# Expected output: False
-# GPU nodes will return `True` when queried
+Install `PyYAML` once in the base environment so the cluster helper commands keep working if Conda `base` is active:
 
-# 6. Install additional packages
+```bash
+conda activate base
+python -m pip install --upgrade pip PyYAML
+```
+
+### 3.2 Create the course environment
+
+The student cluster has multiple CUDA versions through environment modules. A practical setup is to load a specific CUDA module and install matching [PyTorch wheels](https://pytorch.org/get-started/locally/). For example, an environment with the CUDA 13.0 module and PyTorch wheels built for CUDA 13.0 can be installed as:
+
+```bash
+conda create -n digihum python=3.11 -y
+conda activate digihum
+
+module add cuda/13.0
 pip install --upgrade pip
-pip install tqdm  # and others as needed
+pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install --no-cache-dir gpustat tqdm matplotlib ipython PyYAML
 ```
 
-## 4. Accessing GPUs: Running a Job Using `srun`
+Run `conda activate digihum` and `module add cuda/13.0` in each new shell or job before running GPU code. The order is not important for this setup, but the examples below keep this order consistently.
 
-Each team is entitled to one GPU, with only one user able to utilize it at a time. For this tutorial, students are grouped into random 4-member teams, with final team assignments updated by March 5th.
-
-Available hardware specifications and usage limits are detailed [here](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentCluster). Each team is provided with 8 weeks of GPU runtime, and a job's maximum duration is capped at 2 days. Upon exceeding these limits, jobs are automatically terminated. If your project requires additional resources, please contact Frano.
-
-To initiate a GPU session, use the following command:
+Check that PyTorch imports on the login node:
 
 ```bash
-srun --account digital_humans --time=00:00:30 --gpus=1 --pty bash
+python -c "import torch; print('PyTorch', torch.__version__); print('CUDA available on this node?', torch.cuda.is_available())"
 ```
 
-This command requests a GPU session with a specified time limit of 30 seconds (HH:MM:SS). Once resources are allocated, you'll gain access to an interactive shell on a GPU node. Note that the hostname in your shell prompt should now have been changed, for example from `login_name@student-cluster:~` to `login_name@studgpu-node01:~`. This means that you are now in an interactive shell session on the `studgpu-node01` machine.
+On a login node, `torch.cuda.is_available()` should normally be `False`, because login nodes do not have GPUs. It should become `True` inside a GPU job.
 
-Note that closing the original ssh session to the student cluster will terminate the job unless you are running `srun` in the background on the student cluster, e.g. in `tmux` or `screen`. To connect to the student cluster and automatically start a tmux session, consider using this SSH command from your local machine instead:
+If you need a different CUDA version, inspect available modules:
 
 ```bash
-ssh login_name@student-cluster -t '(tmux at -t foobar || tmux new -s foobar)'
+module avail
 ```
 
-More examples of using `srun`:
+Then load the matching module and use the matching PyTorch index URL, for example `cu129` for CUDA 12.9 or `cu130` for CUDA 13.0.
+
+### 3.3 Jupyter notebooks
+
+This tutorial focuses on terminal and Slurm workflows. If you use Jupyter, start it through [student-jupyter.inf.ethz.ch](https://student-jupyter.inf.ethz.ch) and follow the [ISG Jupyter instructions](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterJupyter). Closing the browser tab does not stop the server; stop it from the JupyterHub home page when you are done so it does not keep consuming your time budget.
+
+## 4. Accessing GPUs with `srun`
+
+Slurm manages GPU access. For quick interactive work, use `srun`.
+
+Start a short interactive GPU shell:
 
 ```bash
-# Ask for a 24h job limit# Request a 24-hour job limit
-srun --account digital_humans --time=24:00:00 --gpus=1 --pty bash
-
-# Request the maximum allowed 48-hour job limit
-# Allocation may be delayed if the cluster is busy
-srun --account digital_humans --time=48:00:00 --gpus=1 --pty bash
-
-# Request the maximum allowed 2 CPUs
-srun --account digital_humans --cpus-per-task 2 --pty bash
-
-# Request 14GB RAM per CPU, totaling 28GB, the maximum allowed
-srun --account digital_humans --cpus-per-task 2 --mem-per-cpu=14G --pty bash
-
-# Generally, you can ask SLURM for any specific resource configurations
-# including what kind of GPU, how much memory the GPU should have,
-# how much RAM you need, how many CPU cores, etc.
-# However, note that the student cluster only offers the GPUs described at
-# https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentCluster
-# and has limitations on the number of CPUs and RAM which in our case are:
-#  - Maximum of 2 CPUs per job
-#  - Maximum of 28GB RAM in total
-#  - One job at a time per team
-# Limits can be verified using cri_show_assoc and cri_show_qos functions provided in the .bashrc example.
+srun --account digital_human --time=00:10:00 --gpus=1 --pty bash --login
 ```
 
-## 5. Accessing GPUs: Running a Batch of Jobs Using `sbatch`
+Your prompt should move from a login node to a GPU node such as `studgpu-node...`. Inside the job:
 
-For running a batch of jobs, we recommend using `sbatch` instead of `srun`. Basic instructions and examples are available [here](https://www.isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterRunningJobs), with further details found in the [official documentation](https://slurm.schedmd.com/sbatch.html) and [ETH's scientific computing wiki](https://scicomp.ethz.ch/wiki/Using_the_batch_system).
+```bash
+hostname
+nvidia-smi
+conda activate digihum
+module add cuda/13.0
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0))"
+```
 
-We provide an example sbatch script at [`sbatch_example_script.sh`](./sbatch_example_script.sh), which you can submit by running:
+Run the MNIST example:
+
+```bash
+cd ~/code/eth-digihum-cluster-tutorial
+python train_mnist.py --epochs 1 --batch-size 256 --data-dir /work/scratch/$USER/digihum-tutorial-data
+```
+
+The short time limit keeps examples cheap. Increase it for real experiments.
+
+More examples:
+
+```bash
+# Request a specific GPU model.
+srun --account digital_human --time=00:10:00 --gpus=5060ti:1 --pty bash --login
+srun --account digital_human --time=00:10:00 --gpus=2080ti:1 --pty bash --login
+srun --account digital_human --time=00:10:00 --gpus=1080ti:1 --pty bash --login
+
+# Request CPU and memory explicitly.
+srun --account digital_human --time=00:10:00 --gpus=1 --cpus-per-gpu=2 --mem=24G --pty bash --login
+```
+
+For this course, each user can run at most one GPU job at a time, and each job can request one GPU. Current GPU node layouts are:
+
+| GPU type    | GPUs/node | CPUs/node | RAM/node | VRAM/GPU                 | Nodes | Total GPUs |
+| ----------- | --------: | --------: | -------: | ------------------------ | ----: | ---------: |
+| `5060ti`    |         8 |        28 | ~248 GiB | 16 GB                    |     4 |         32 |
+| `2080ti`    |         8 |        36 | ~369 GiB | 11 GB                    |     4 |         32 |
+| `1080ti`    |         8 |        20 | ~248 GiB | 11 GB                    |    24 |        192 |
+| `gb10`      |         1 |        20 | ~117 GiB | 128 GB, shared with CPUs |     6 |          6 |
+| **Total**   |           |           |          |                          |    38 |        262 |
+
+GB10 is useful for projects that need large CUDA memory, but there are only 6 total GB10 GPUs and the maximum runtime is 24 hours, while the other GPU types can run for up to 48 hours.
+
+A good default request is `--cpus-per-gpu=2 --mem=24G`. It works across all four GPU types and avoids reserving more shared-node resources than most starter jobs need. Increase CPU or RAM if data loading, preprocessing, or memory usage becomes the bottleneck; larger requests can make scheduling harder.
+
+Important: if you run `srun` in a normal SSH shell and then close the SSH window, the interactive job is likely to die. Start `srun` inside `tmux` on a fixed login node if you want it to survive laptop sleep or network changes.
+
+## 5. Accessing GPUs with `sbatch`
+
+Use `sbatch` for jobs that should run without an interactive terminal. You submit one script or a batch of scripts, Slurm runs them when resources are available, and you inspect the logs and results after the jobs finish. This is the normal way to run longer experiments or many experiments in sequence.
+
+Submit the provided script:
 
 ```bash
 sbatch sbatch_example_script.sh
-# Submitted batch job 2736
-
-cat ~/slurm_output__sbatch_example_script.sh-2736.out
-# ...
-# + python -c 'import torch; print('\''Cuda available?'\'', torch.cuda.is_available())'
-# Cuda available? True
-# + python -c 'import torch; torch.manual_seed(72); print(torch.randn((3,3)))'
-# tensor([[-1.0001, -0.7250, -0.3560],
-#         [-0.2706,  2.1503,  0.4779],
-#         [-2.9557, -0.3567, -0.3766]])
-# + echo Done.
-# ...
 ```
 
-## 6. Accessing GPUs: Monitoring Jobs
-
-To oversee your jobs within the Slurm scheduling queue, use `squeue`. Jobs listed are either in execution or pending execution. Waiting jobs are accompanied by a reason for their delayed start.
+Check the queue:
 
 ```bash
-# Basic squeue usage
+squeue --user $USER
+```
+
+When `sbatch` accepts the job, it prints a line like `Submitted batch job 123456`; that number is the job id. You can also find it with `squeue`.
+
+The provided script writes output to `~/slurm_output__sbatch_example_script.sh-JOBID.out`. Replace `JOBID` with the number printed by `sbatch`:
+
+```bash
+cat ~/slurm_output__sbatch_example_script.sh-JOBID.out
+```
+
+The provided [sbatch script](./sbatch_example_script.sh) loads CUDA, activates the `digihum` conda environment, checks PyTorch CUDA availability, and runs one epoch of `train_mnist.py`. Use it as the skeleton for your own batch scripts.
+
+## 6. Monitoring and canceling jobs
+
+Basic queue commands:
+
+```bash
 squeue
-
-# Display only your jobs
-squeue --user login_name
-
-# Filter jobs related to the course
-squeue --account digital_humans
-
-# More detailed squeue output
-squeue -o "%8i %12j %15a %15g %10v %15b %5D %12u %4t %30R %9Q %5c %5C %8m %20b %5D %11M %11l %11L %20V %20S"
+squeue --user $USER
+squeue --account digital_human
+squeue --account digital_human_jobs
 ```
 
-To cancel a job, use its JOBID found via `squeue` and run `scancel JOBID` (e.g., `scancel 48105793`). To cancel all your jobs, execute `scancel -u login_name`. For further job management options, explore [`scontrol`](https://slurm.schedmd.com/scontrol.html).
-
-## 7. Storage Options
-
-Every individual user is provided 10GB of disk space in their home folder `/home/login_name`. The usage of the space is printed after logging in to the cluster, e.g., as `Your home has 1124MB free space of 10000MB total`. You can use your home folder to setup your environment (e.g., via conda), store your code, logs, and data.
-
-In case you need more space for downloading datasets, store large model checkpoints, etc., you can use your team's shared space in `/cluster/courses/digital_humans/datasets/team_ID`. We have reserved 1TB of shared space for the course in total. Please be considerate with your space usage, e.g., using 75GB per team should be safe and feasible. We will let you know if you use too much space, don't worry about it too much. If you need much more disk space, reach out to Frano.
-
-**Note:** If your data or models are pulled via `git` and `git-lfs` and you do not plan to modify them or commit your modifications, you can use the `lfs-hardlink` command available on the student cluster to hard-link the LFS objects and save *half* of the space. Check the script by running `cat /usr/local/bin/lfs-hardlink` for more details.
-
-## 8. Useful Command Tools
-
-Consider checking some of the tools listed below for your workflow:
-
-- `tmux` or `screen` - Continue command execution in the background even if the SSH connection is closed.
-- `htop` - CPU and memory usage analysis and process management. Important for identifying CPU bottlenecks.
-- `nvidia-smi` and `nvtop` - GPU usage monitoring tools. Important for identifying GPU bottlenecks.
-- `ncdu` - Disk usage analyzer that helps identify what takes up the most space.
-- `watch` - Execute a command repeatedly at a set interval, e.g., `watch -n 0.7 nvidia-smi` runs every 0.7 seconds.
-- `scp` - Similar to cp but via SSH. It enables file and folder copying between local and remote machines via SSH, e.g., `scp login_name@student-cluster.inf.ethz.ch:/path/to/a/file /local/destination/path`.
-- `which` - Inspect the full path of a command, e.g., `which python` and `which pip`.
-- `vim` - The best editor.
-
-Should a command not be available on the cluster, it may be possible to install it into your conda environment, e.g., `conda install ncdu -c conda-forge`, or alternatively, compile it from source. Note that certain tools like `nvtop` may require root privileges to install.
-
-## 9. Remote File Access
-
-For accessing and managing files on the cluster, such as reviewing generated results and logs, the following tools are recommended:
-
-- [sshfs](https://www.digitalocean.com/community/tutorials/how-to-use-sshfs-to-mount-remote-file-systems-over-ssh) - Mounts a SSH-accessible remote location to a local directory, enabling normal access through your file explorer or applications, e.g., `sshfs login_name@student-cluster.inf.ethz.ch:/path/to/some/dir /mnt/path/on/local/machine`.
-- Python's built-in [http.server](https://docs.python.org/3/library/http.server.html#http-server-security) module - Launching a simple HTTP server on the remote with `python -m http.server --directory /path/to/dir 8000` allows you to browse and view files in your local machine's browser after setting up port forwarding, e.g., `ssh -L 8000:localhost:8000 login_name@student-cluster.inf.ethz.ch`.
-- [FileZilla (Client)](https://filezilla-project.org/) - Provides a graphical interface for file transfers between your local machine and remote servers.
-- Command-line tools like `rsync` and `scp` for efficient file synchronization and copying.
-- Integrated development environments (IDEs) such as PyCharm and VS Code offer built-in tools for remote file management.
-
-To view TensorBoard results on your local machine's browser, you can use port forwarding:
+Detailed queue view, refreshed every two seconds:
 
 ```bash
-# Log into the remote with port forwarding
+watch -n 2 'squeue -o "%16i %40j %7a %5g %10v %8u %2t %18R %8Q %5c %4C %8m %5D %13b %10l %10L %20S" --user $USER'
+```
+
+Cancel one job:
+
+```bash
+scancel JOBID
+```
+
+Cancel all your jobs:
+
+```bash
+scancel -u $USER
+```
+
+If a job is pending, look at the reason column. Common reasons are lack of available resources, asking for too many CPUs/GPUs/RAM, missing or wrong account, or a node that is still powering up.
+
+Useful cluster info:
+
+```bash
+courses    # course tags, time limits, and resources
+space      # writable storage locations and free space
+```
+
+## 7. Storage options
+
+The cluster login scripts print `courses` and `space` when you log in. Run `space` again when you want the current paths and quotas:
+
+```bash
+space
+```
+
+Use the storage locations as follows:
+
+- Home: `/home/$USER`, 20 GB. Use it for shell configuration, small environments, and code. Do not store datasets or large checkpoints here.
+- Personal scratch: `/work/scratch/$USER`, 100 GB per user. Use it for datasets, checkpoints, logs, and temporary project data. It has no backup and old data is cleaned automatically.
+- Team storage: `/work/courses/digital_human/teamX`, 100 GB per team. Use it for shared datasets, checkpoints, logs, generated outputs, and other files that several team members need to read or write.
+- Course data: `/cluster/courses/digital_human`, if course-provided shared data is used.
+- Job-local temporary storage: `$TMPDIR`, under `/tmp` on the compute node. It is fast and deleted when the job ends.
+
+The best tool for inspecting disk usage inside a directory is `ncdu`:
+
+```bash
+conda install -c conda-forge ncdu -y
+ncdu /work/scratch/$USER
+```
+
+If your home fills up, start with caches:
+
+```bash
+python -m pip cache info
+python -m pip cache purge
+conda clean -a
+du -sh ~/* ~/.cache ~/.local 2>/dev/null
+```
+
+## 8. Useful command-line tools
+
+Commands worth knowing:
+
+- `tmux` or `screen`: keep sessions alive after SSH disconnects.
+- `htop`: inspect CPU and RAM usage.
+- `gpustat -i 1 -P -u`: compact live GPU view with process and user names.
+- `nvidia-smi`: inspect GPU usage.
+- `watch -n 1 command`: rerun a command every second, useful for live monitoring.
+- `nvtop`: interactive GPU monitor if installed.
+- `ncdu`: interactive disk usage analyzer.
+- `du -sh path`: quick disk usage summary.
+- `rsync`: robust file copying and syncing.
+- `scp` and `sftp`: simple SSH-based copy tools.
+- `which python`, `which pip`, `python -m pip`: verify which environment you are using.
+- `module avail`, `module list`, `module add cuda/13.0`: manage system modules.
+- `vim`, `nano`, or `micro`: terminal editors.
+
+If a small tool is missing, try installing it in conda:
+
+```bash
+conda install -c conda-forge ncdu htop gpustat nodejs -y
+```
+
+## 9. Remote file access and port forwarding
+
+For one-off copies, use `scp` or `rsync`. For a real-time synced setup where files can be edited both locally and remotely, for example when coding locally while running agents on the cluster, use Mutagen; it is described in [section 12](#12-two-way-sync-using-mutagen).
+
+Simple copying:
+
+```bash
+# local -> cluster
+scp local_file.txt login_name@student-cluster.inf.ethz.ch:/home/login_name/
+
+# cluster -> local
+scp login_name@student-cluster.inf.ethz.ch:/home/login_name/remote_file.txt .
+
+# directory sync
+rsync -avh --progress ./my_project/ login_name@student-cluster.inf.ethz.ch:/home/login_name/code/my_project/
+```
+
+TensorBoard port forwarding:
+
+```bash
+# On your laptop
 ssh -L 6006:localhost:6006 login_name@student-cluster.inf.ethz.ch
 
-# Start the TensorBoard server on port 6006
-tensorboard --logdir /path/to/some/dir --port=6006
-
-# Open http://localhost:6006/ in a browser on your local machine to access the TensorBoard
+# On the cluster
+tensorboard --logdir /path/to/logs --port 6006
 ```
 
-## 10. Development Setup
+Then open `http://localhost:6006/` locally.
 
-A straightforward development workflow is to code on your local machine, sync the code to the cluster login node, and execute it on the cluster GPU nodes. Your local machine is then used only for coding, and the GPU nodes on the cluster do all the computation. To set up the sync of the code, you can use PyCharm's built-in [deployment tools](https://www.jetbrains.com/help/pycharm/2023.3/creating-a-remote-server-configuration.html#overload), VS Code's [SFTP extension](https://marketplace.visualstudio.com/items?itemName=satiromarra.code-sftp), or use tools such as `rsync`. The GPU nodes and the login node share the same disk space in `/home/login_name` and `/cluster/courses/digital_humans/`, so the code only needs to be synced with the login node.
+For experiment logs that should be accessible from anywhere without running a TensorBoard server, consider using Weights & Biases (`wandb`) instead. Keep the local `wandb/` directory out of Git and Mutagen sync.
 
-**Note:** It is not possible to SSH into the GPU nodes. Your local machine can SSH into the `student-cluster.inf.ethz.ch` login node, as depicted on the diagram below. Similarly, the GPU nodes (e.g., `studgpu-node01`) can also SSH into the login node. But neither your local machine nor the login node are permitted to SSH into the GPU node.
+Use `uploadserver` to browse, download, and upload generated files through a forwarded local port:
 
-```txt
-┌──────────────────┐      ┌───────────────────────────────┐      ┌──────────────────┐
-│                  │      │                               │      │                  │
-│  Local Machine   ├─────►│  student-cluster.inf.ethz.ch  │◄─────┤  studgpu-node01  │
-│                  │      │                               │      │                  │
-│ ┌─────────────┐  │      └─────────────┬─────────────────┘      └───┬──────────────┘
-│ │ Source Code │  │                    │                            │               
-│ └─────────────┘  │                    ▼                            │               
-└──────────────────┘               ┌─────────────┐                   │               
-                                   │  Deployed   │                   │               
-                                   │             │◄──────────────────┘               
-                                   │ Source Code │                                   
-                                   └─────────────┘                                   
+```bash
+# On the cluster
+python -m pip install uploadserver
+python -m uploadserver --bind 127.0.0.1 --directory /path/to/project/root 8000
+
+# On your laptop
+ssh -L 8000:localhost:8000 login_name@student-cluster.inf.ethz.ch
 ```
+
+Then open `http://localhost:8000/` locally.
+
+## 10. Development workflow
+
+Use local [PyCharm Professional](https://www.jetbrains.com/pycharm/) as the main development environment. PyCharm is the best IDE for software developers coding in Python, with the best debugger, global search, and indexing capabilities. It is included in the free [JetBrains Student Pack](https://www.jetbrains.com/academy/student-pack/). PyCharm can [configure SSH interpreters](https://www.jetbrains.com/help/pycharm/configuring-remote-interpreters-via-ssh.html), which means the IDE stays local while its run, debug, and indexing features use the cluster environment. Keeping the IDE local avoids many of the instabilities, network delays, and bugs that in my experience come with running the full IDE directly on the cluster, for example through [PyCharm Gateway](https://www.jetbrains.com/help/pycharm/jetbrains-gateway.html) or [VS Code Server](https://code.visualstudio.com/docs/remote/ssh).
+
+To SSH into a GPU node, do not use plain `ssh studgpu-nodeXX`; use ISG's supported [`cluster-tunnel`](https://isg.inf.ethz.ch/Main/HelpClusterComputingStudentClusterRunningJobs) workflow instead. Use it when you want PyCharm, a terminal, or another SSH client to connect directly to the allocated GPU node. In that case, the tunnel job replaces the interactive `srun` command: it submits a Slurm job, allocates the GPU node, starts an SSH server inside that job, and exposes it through the login node. Do not start a separate `srun` job for the same work. The provided [`pycharm_tunnel_sbatch.sh`](./pycharm_tunnel_sbatch.sh) keeps the normal `cluster-tunnel` SSH configuration but enables the SFTP subsystem that PyCharm needs, so use it as the default tunnel job.
+
+```bash
+# On the login node: print the SSH config once, then copy it to the laptop.
+cluster-tunnel config
+
+# On the login node: start the PyCharm-compatible GPU tunnel.
+sbatch pycharm_tunnel_sbatch.sh
+
+# Check or stop the tunnel job.
+cluster-tunnel status
+cluster-tunnel stop
+
+# Optional: from the login node, SSH through the tunnel.
+ssh -o ProxyCommand='cluster-tunnel connect' cluster-tunnel
+
+# On the laptop, after adding the SSH config printed by `cluster-tunnel config`:
+ssh cluster-tunnel
+# or for tmux:
+ssh -t cluster-tunnel 'tmux new -A -s gpu-tunnel'
+```
+
+In PyCharm, use `cluster-tunnel` as the SSH server. When adding the SSH interpreter, the last step shows the "Sync folders" settings. Do not keep PyCharm's default remote path such as `/tmp/pycharm_project_*`. Instead, map the local project root to a stable path on the cluster, for example `/home/login_name/code/project_name`. For the interpreter, select an existing `Conda` environment, set the Conda path to `/home/login_name/miniconda3/bin/conda` if it is not detected automatically, and select your environment, for example `/home/login_name/miniconda3/envs/digihum`.
+
+**Alternatives.**
+If you do not want to use PyCharm or local IDEs, the following are also possible. [VS Code Remote SSH](https://code.visualstudio.com/docs/remote/ssh) runs VS Code locally while connecting to a server-side VS Code component over SSH. [code-server](https://coder.com/docs/code-server) runs a VS Code-like editor on the remote and serves it through the browser. [PyCharm Gateway](https://www.jetbrains.com/help/pycharm/jetbrains-gateway.html) is JetBrains' fully remote IDE workflow. These fully remote IDE setups can work, but in my experience they are often slower, buggier, and less stable than running IDEs locally. For simpler file movement, manual `rsync` is also fine. For debugging, possible alternatives include VS Code remote debugging, PyCharm debug servers, or the simplest option: put `breakpoint()` in the code and debug in the terminal. The right workflow is the one that is fast enough, stable enough, and lets you understand what your code is doing.
 
 To debug the code executed on the GPU node, the overall simplest way available across all environments is the built-in [`breakpoint()`](https://docs.python.org/3/library/pdb.html) function (a shortcut for `import pdb; pdb.set_trace()`). This works on any machine where you have an interactive shell as follows:
 
 1. Insert `breakpoint()` in your code where you wish to pause execution, possibly in an if statement if you are looking for a condition to be met.
 2. Run your script as `python your_script.py`.
-3. When the `breakpoint()` line is reached, the execution will be paused and you will have an interactive `pdb` debugger prompt.
-4. Use pdb commands to inspect the state of the variables, etc. Common pdb commands include:
+3. When the `breakpoint()` line is reached, execution pauses and you get an interactive `pdb` debugger prompt.
+4. Use `pdb` commands to inspect variables or move around the call stack. Common `pdb` commands include:
    - `h` for help
    - `s` to step to the next line of code
    - `p EXPRESSION` to evaluate and print an expression, e.g., to inspect the value of a variable
    - `c` to continue the code execution
    - `l` to list the code surrounding the breakpoint
    - `ll` to list the complete code of the currently evaluated function or frame
-   - `q` to quit the debugger and stop the programm
+   - `q` to quit the debugger and stop the program
 
-For an example, refer to [`debugging_example_1.py`](./debugging_example_1.py) or execute `python debugging_example_1.py`.
+For an example, refer to [`debugging_example.py`](./debugging_example.py) or run `python debugging_example.py`.
 
-**Optional:** However, you might still prefer to use an IDE for debugging for easier inspections and visualization of variables and data. For debugging inside PyCharm, the best IDE for Python by popular opinion, you can use a [Python Debug Server](https://www.jetbrains.com/help/pycharm/2023.3/remote-debugging-with-product.html#remote-debug-config). To set up a Python Debug Server in PyCharm, you can follow these steps:
-1. Open a codebase in PyCharm that you want to work with and debug. For tutorial purposes, you can also git clone this repository and open it in PyCharm. 
-2. Create an SFTP Deployment setup to sync the codebase opened in PyCharm to a location on your `student-cluster.inf.ethz.ch` (e.g., `/home/login_name/code/myproject01`). SFTP stands for SSH File Transfer Protocol and can be used by PyCharm to automatically sync the code changes you make in PyCharm to the remote server.
-3. Make sure that you the changes in PyCharm are indeed deployed to the remote. For example, change something in the code, and use `cat` on the remote to check if the deployed file was updated.
-4. Setup a Python Debug Server on a random port, e.g. 12345. Not all ports will work, you can stick to numbers beteween 10000 and 20000. Beware that some ports might already be used (possibly by other students following this tutorial). Make sure to add the necessary debugging snippet as is done in [`debugging_example_2.py`](./debugging_example_2.py).
-5. Start a GPU job with `srun`, e.g. `srun --account digital_humans --time=00:05:00 --gpus=1 --pty bash`.
-6. Make sure that the GPU node can SSH into the login node `student-cluster.inf.ethz.ch`. For simplicity and safety, you might want to consider setting up SSH keys again.
-7. Allow the GPU node to reach your local machine at the debugging port (e.g., port 12345):
-   1. Create a reverse tunnel on your local machine, `ssh -N -R 12345:localhost:12345 login_name@student-cluster.inf.ethz.ch`. This will make the requests to the port 12345 on `student-cluster.inf.ethz.ch` be tunneled to port 12345 on your local machine. To test if you can open a TCP connection to your local machine, run `nc -zv 127.0.0.1 12345` on `student-cluster.inf.ethz.ch`, this should succeed after the port forwarding has been set up and return `Connection to 127.0.0.1 12345 port [tcp/*] succeeded!`.
-   2. Create a forward tunnel on your GPU node, `ssh -N -L 12345:localhost:12345 login_name@student-cluster.inf.ethz.ch`. This will make the requests to port 12345 of the GPU node be forwarded to port 12345 of `student-cluster.inf.ethz.ch`. But the requests at port 12345 `student-cluster.inf.ethz.ch` are already forwarded to the local machine with the reverse tunnel, so the requests from the GPU node will be directly forwarded to the local machine. You can test that the forwarding has been set up correctly by running `nc -zv 127.0.0.1 12345` on your GPU node, this should again return a success message.
-8. Now that port 12345 of your GPU node is tunneled to port 12345 of your local machine, it is possible to attach debugging session on your GPU node to a debug server on your local machine:
-   1. Start the debug server in PyCharm on your local machine.
-   2. Run the python script on your GPU node as `python debugging_example_2.py`.
-   3. Optionally configure path mappings for the debug server so that the source codes on the local and remote are automatically matched.
+## 11. AI coding agents
 
-**Note:** Configuring a [remote interpreter via SSH](https://www.jetbrains.com/help/pycharm/2023.3/configuring-remote-interpreters-via-ssh.html) in PyCharm is more convenient than using the Python Debug Server. However, it is difficult to set it up cleanly as establishing an SSH connection with the GPU nodes is not permitted.
+AI coding agents are allowed in the course with the following policy: "Students may use AI tools of their choice. However, all results must be verifiable, accountable, and reproducible, and students bear full responsibility for meeting these standards." A good cluster workflow is to run agents through their CLI directly on the cluster in a `tmux` session. This lets the agent keep working if the laptop disconnects, run cluster commands and jobs directly, and edit the synced project. Agents can otherwise also run locally on your laptop and interact with the cluster over SSH.
 
-For VS Code users, you might want to consider setting up a [VS Code Server](https://code.visualstudio.com/docs/remote/vscode-server). If you want to contribute to the tutorial with more details on that, please do, contributions are welcome and encouraged through pull requests!
+Here is a quick starter for using [Codex CLI](https://developers.openai.com/codex/cli) on the cluster:
 
-## Conclusion
+```bash
+# Run agents in a tmux session on the cluster so they survive SSH disconnects.
+ssh -t login_name@student-cluster1.inf.ethz.ch 'tmux new -A -s codex'
 
-This tutorial walked you through the most important aspects to get you up to speed with using the cluster. We outlined some of the ways and workflows to use the cluster, but many exist and feel free to find your own. It doesn't matter that much what workflow you use as long as you find it convenient to use and you can get work done.
+# Install Codex into the Conda base environment.
+conda activate base
+conda install -c conda-forge nodejs=20 -y
+npm install -g @openai/codex
+npm update -g @openai/codex
+codex --version
+codex
+```
 
-To further assess your understanding, consider attempting the following tasks:
+When writing code, use version-control tools to track changes. You do not have to follow standard Git practices such as committing frequently or branching if you do not want to, or if you are not collaborating on the same codebase. Git is still useful for inspecting diffs and understanding what changed. For tracking and reviewing changes, I recommend VS Code because it has an excellent out-of-the-box view of staged and unstaged changes. "Unstaged" changes are everything currently modified. "Staged" changes are the reviewed changes you are happy with. Use staging to separate changes you have reviewed from changes you still need to inspect. When working with coding agents, let their edits appear as unstaged changes, review the important changes carefully and skim the mechanical ones, stage the parts you are happy with, and revert or ask the agent to fix the parts you do not want to keep.
 
-1. Train an image classifier on MNIST using `srun`. We have provided a minimal [`train_mnist.py`](./train_mnist.py) Python script that you can directly use. Please consider limiting your job time to 10 minutes or less to allow other students to get access to the resources during the tutorial session. Are the resulting test accuracies reasonable? Is the GPU utilized? Where is the computational bottleneck?
-2. Train an image classifier on MNIST using `sbatch`. How can you monitor the job running in the background? How much time is the job still allowed to run before before being terminated? Can you find the SLURM log file?
-3. Create a dummy folder on the student cluster and download it somehow to your local machine.
-4. What happens if you ask for 3 CPUs? Or 2 GPUs?
-5. Run a job with `srun` in the background with `tmux`, `screen`, or some other tool. Make sure you can close your SSH connection but keep `srun` running in the background. SSH again into the login node and verify that `srun` was still running in the background and was not terminated.
-6. Start an interactive session with `srun`. Can you login into the node running the job via SSH? No, you cannot, figure out why. Guess what configuration file on the system disallows it.
+## 12. Two-way sync using Mutagen
+
+If agents edit code on the cluster while you edit locally, you need fast two-way synchronization between the code on the laptop and the code on the cluster. [Mutagen](https://mutagen.io/) is the recommended tool for that. If you only copy code in one direction, `rsync` or PyCharm deployment is enough and you do not need Mutagen.
+
+```bash
+# Install Mutagen on the laptop, e.g. with Homebrew on macOS.
+brew install mutagen-io/mutagen/mutagen
+mutagen version
+
+# Create the cluster project directory.
+ssh login_name@student-cluster1.inf.ethz.ch 'mkdir -p ~/code/my_project'
+
+# Create a sync from the laptop project to a fixed login node.
+# Only sync code. Do not sync outputs, data, Git metadata, etc.
+# This creation command only needs to be run once.
+mutagen sync create --name digihum-my-project --ignore-vcs \
+  -i 'data' \
+  -i 'datasets' \
+  -i 'outputs' \
+  -i 'logs' \
+  -i 'checkpoints' \
+  -i '.cache' \
+  -i '.pytest_cache' \
+  -i '.mypy_cache' \
+  -i '.ruff_cache' \
+  -i '**/__pycache__' \
+  -i '**/.ipynb_checkpoints' \
+  -i '*.pyc' \
+  -i '*.pyo' \
+  -i '*.swp' \
+  -i '*.swo' \
+  -i '.DS_Store' \
+  /Users/YOUR_USERNAME/code/my_project \
+  login_name@student-cluster1.inf.ethz.ch:/home/login_name/code/my_project
+
+# Useful Mutagen commands after creation.
+mutagen sync list digihum-my-project
+mutagen sync monitor digihum-my-project
+mutagen sync pause digihum-my-project
+mutagen sync resume digihum-my-project
+mutagen sync terminate digihum-my-project
+```
+
+Use a fixed login node for Mutagen, such as `student-cluster1`, so the SSH endpoint is stable. Keep datasets, checkpoints, logs, and generated outputs outside the synced source tree. `--ignore-vcs` ignores `.git`; use GitHub/GitLab as the source of truth instead of syncing `.git`. If both sides edit the same file while disconnected, Mutagen may report a conflict. Resolve it manually, for example by overwriting one side with `scp` or patching the file in a text editor, then resume.
