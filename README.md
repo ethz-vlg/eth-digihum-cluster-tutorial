@@ -78,6 +78,23 @@ ssh -t login_name@student-cluster1.inf.ethz.ch 'tmux new -A -s digihum'
 
 This command creates or attaches to a tmux session named `digihum`. If your laptop disconnects, reconnect with the same command and the tmux session should still be there unless the login node rebooted.
 
+### 1.3 Clone this tutorial repository
+
+Many commands below assume you have a local copy of this tutorial repository on the cluster. A simple setup is:
+
+```bash
+mkdir -p ~/code
+cd ~/code
+git clone https://github.com/ethz-vlg/eth-digihum-cluster-tutorial.git
+cd eth-digihum-cluster-tutorial
+```
+
+In the rest of this guide, when we refer to the tutorial repository, we assume it is at:
+
+```bash
+~/code/eth-digihum-cluster-tutorial
+```
+
 ## 2. Tmux and useful configuration files
 
 `tmux` keeps shells alive after your SSH connection drops. It is one of the most important tools for cluster work.
@@ -115,8 +132,8 @@ The repository also provides an example [`.bashrc`](./.bashrc). The most useful 
 cp ~/.bashrc ~/.bashrc.backup.$(date +%Y%m%d_%H%M%S)
 cp ~/.tmux.conf ~/.tmux.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
 
-cp /path/to/this/repo/.bashrc ~/.bashrc.digihum
-cp /path/to/this/repo/.tmux.conf ~/.tmux.conf
+cp ~/code/eth-digihum-cluster-tutorial/.bashrc ~/.bashrc.digihum
+cp ~/code/eth-digihum-cluster-tutorial/.tmux.conf ~/.tmux.conf
 
 cat >> ~/.bashrc <<'EOF'
 
